@@ -1,0 +1,14 @@
+node_modules/
+.vercel/
+.grok/
+.tanstack/
+artifacts/
+screenshots/
+dist/
+.env
+.env.*
+*.local
+.node_modules.lock
+.DS_Store
+AGENTS.md
+startup.sh
