@@ -1,12 +1,16 @@
 import {
   CAR_COST,
   DAY_LENGTH,
+  DOOR_TIME,
+  DWELL_TIME,
+  ELEVATOR_ACCEL,
   ELEVATOR_CAP,
   ELEVATOR_EXTEND,
   ELEVATOR_SPEED,
   EXPAND_COST_BASE,
   EXPAND_COST_STEP,
   EXPAND_STEP,
+  EXPRESS_ACCEL,
   EXPRESS_CAP,
   EXPRESS_CAR_COST,
   EXPRESS_EXTEND,
@@ -26,6 +30,7 @@ import {
 import { CATALOG } from "./catalog";
 import { personName } from "./names";
 import type {
+  BallEvent,
   ElevatorCar,
   ElevatorKind,
   ElevatorShaft,
@@ -217,9 +222,11 @@ function spawnCar(state: SimState, shaft: ElevatorShaft): ElevatorCar {
     prevFloor: floor,
     dest: floor,
     dir: 0,
+    vel: 0,
     state: "idle",
     door: 0,
     doorTarget: 0,
+    dwell: 0,
     passengers: [],
     stops: [],
   };
@@ -315,7 +322,7 @@ export function evalStars(state: SimState): number {
   if (pop >= STAR_POP[2] && hasKind(state, "office")) s = 2;
   if (pop >= STAR_POP[3] && hasKind(state, "shop") && hasKind(state, "restaurant")) s = 3;
   if (pop >= STAR_POP[4] && hasKind(state, "condo")) s = 4;
-  if (pop >= STAR_POP[5] && hasKind(state, "theater") && hasKind(state, "medical")) s = 5;
+  if (pop >= STAR_POP[5] && hasKind(state, "medical") && (hasKind(state, "theater") || hasKind(state, "ballroom"))) s = 5;
   return s;
 }
 
@@ -337,7 +344,7 @@ function inOpenHours(kind: RoomKind, t: number): boolean {
   if (kind === "fastfood") return t >= 0.3 && t < 0.78;
   if (kind === "shop") return t >= 0.38 && t < 0.8;
   if (kind === "restaurant") return t >= 0.46 && t < 0.92;
-  if (kind === "theater") return t >= 0.62 && t < 0.95;
+  if (kind === "theater" || kind === "ballroom") return t >= 0.62 && t < 0.95;
   if (kind === "medical") return t >= 0.34 && t < 0.82;
   return true;
 }
@@ -687,7 +694,11 @@ function pickDest(car: ElevatorCar, shaft: ElevatorShaft): number | null {
   return Math.max(shaft.minFloor, Math.min(shaft.maxFloor, next));
 }
 
-function stepCars(state: SimState, dt: number) {
+function carAccel(shaft: ElevatorShaft): number {
+  return shaftKind(shaft) === "express" ? EXPRESS_ACCEL : ELEVATOR_ACCEL;
+}
+
+function stepCars(state: SimState, dt: number, events: SimEvent[]) {
   for (const car of state.cars) {
     car.prevFloor = car.floor;
     const shaft = state.shafts.find((s) => s.id === car.shaftId);
@@ -697,42 +708,70 @@ function stepCars(state: SimState, dt: number) {
       const dest = pickDest(car, shaft);
       if (dest == null) {
         car.dir = 0;
+        car.vel = 0;
         continue;
       }
       if (Math.abs(dest - car.floor) < 0.04) {
         car.floor = dest;
+        car.vel = 0;
         car.state = "door";
         car.doorTarget = 1;
+        car.dwell = 0;
         car.stops = car.stops.filter((f) => Math.abs(f - dest) > 0.2);
+        continue;
+      }
+      if (car.door > 0.04) {
+        car.doorTarget = 0;
+        car.door = Math.max(0, car.door - dt / DOOR_TIME);
         continue;
       }
       car.dest = dest;
       car.dir = dest > car.floor ? 1 : -1;
+      car.vel = 0;
       car.state = "move";
+      car.door = 0;
       car.doorTarget = 0;
     }
 
     if (car.state === "move") {
-      car.door = Math.max(0, car.door - dt / 0.25);
-      const next = car.floor + car.dir * carSpeed(shaft) * dt;
-      const passed = car.dir > 0 ? next >= car.dest : next <= car.dest;
-      if (passed) {
+      const maxV = carSpeed(shaft);
+      const acc = carAccel(shaft);
+      const remaining = (car.dest - car.floor) * (car.dir || Math.sign(car.dest - car.floor) || 1);
+      if (remaining <= 0.02 || car.dir === 0) {
         car.floor = car.dest;
+        car.vel = 0;
         car.state = "door";
         car.doorTarget = 1;
+        car.dwell = 0;
         car.stops = car.stops.filter((f) => Math.abs(f - car.dest) > 0.2);
       } else {
-        car.floor = next;
+        const stopDist = (car.vel * car.vel) / (2 * Math.max(0.1, acc));
+        if (remaining <= stopDist) {
+          car.vel = Math.max(0, car.vel - acc * dt);
+        } else {
+          car.vel = Math.min(maxV, car.vel + acc * dt);
+        }
+        const step = Math.min(remaining, Math.max(car.vel, 0.12) * dt);
+        car.floor += car.dir * step;
+        if ((car.dir > 0 && car.floor >= car.dest) || (car.dir < 0 && car.floor <= car.dest)) {
+          car.floor = car.dest;
+          car.vel = 0;
+          car.state = "door";
+          car.doorTarget = 1;
+          car.dwell = 0;
+          car.stops = car.stops.filter((f) => Math.abs(f - car.dest) > 0.2);
+        }
       }
     }
 
     if (car.state === "door") {
-      const spd = 1 / 0.4;
+      const spd = 1 / DOOR_TIME;
       if (car.door < car.doorTarget) car.door = Math.min(car.doorTarget, car.door + dt * spd);
       else car.door = Math.max(car.doorTarget, car.door - dt * spd);
 
-      if (car.door > 0.85 && car.doorTarget === 1) {
+      if (car.doorTarget === 1 && car.door > 0.92) {
         const fl = Math.round(car.floor);
+        const before = car.passengers.length;
         for (let i = car.passengers.length - 1; i >= 0; i--) {
           const pid = car.passengers[i]!;
           const p = state.people.find((x) => x.id === pid);
@@ -764,18 +803,36 @@ function stepCars(state: SimState, dt: number) {
           car.passengers.push(p.id);
           callCar(car, alightFloor(shaft, p.destFloor));
         }
-        car.doorTarget = 0;
+        const used = before !== car.passengers.length;
+        if (car.dwell <= 0) {
+          car.dwell = DWELL_TIME;
+          if (used) events.push({ kind: "ding", text: "", floor: fl, x: shaft.x });
+        } else {
+          car.dwell -= dt;
+          if (car.dwell <= 0) {
+            car.dwell = 0;
+            car.doorTarget = 0;
+          }
+        }
       }
 
-      if (car.doorTarget === 0 && car.door < 0.05) {
+      if (car.doorTarget === 0 && car.door < 0.04) {
         car.door = 0;
         const dest = pickDest(car, shaft);
         if (dest == null) {
           car.state = "idle";
           car.dir = 0;
+          car.vel = 0;
+        } else if (Math.abs(dest - car.floor) < 0.04) {
+          car.floor = dest;
+          car.state = "door";
+          car.doorTarget = 1;
+          car.dwell = 0;
+          car.stops = car.stops.filter((f) => Math.abs(f - dest) > 0.2);
         } else {
           car.dest = dest;
           car.dir = dest > car.floor ? 1 : dest < car.floor ? -1 : 0;
+          car.vel = 0;
           car.state = car.dir === 0 ? "idle" : "move";
         }
       }
@@ -784,6 +841,8 @@ function stepCars(state: SimState, dt: number) {
     for (const pid of car.passengers) {
       const p = state.people.find((x) => x.id === pid);
       if (p) {
+        p.prevFloor = p.floor;
+        p.prevX = p.x;
         p.floor = car.floor;
         p.x = shaft.x + 1;
       }
@@ -850,10 +909,9 @@ function stepPeople(state: SimState, dt: number, events: SimEvent[]) {
   const reach = accessSet(state);
   const exitX = streetX(state);
   for (const p of state.people) {
+    if (p.state === "ride") continue;
     p.prevX = p.x;
     p.prevFloor = p.floor;
-
-    if (p.state === "ride") continue;
 
     if (p.state === "occupy") {
       const crossed = state.time >= p.occupyUntil && !(p.occupyUntil < 0.2 && state.time > 0.25 && p.occupyUntil > 0);
@@ -961,7 +1019,13 @@ function stepPeople(state: SimState, dt: number, events: SimEvent[]) {
           if (room && Math.abs(p.floor - room.floor) < 0.3 && p.x >= room.x && p.x <= room.x + room.cols) {
             p.state = "occupy";
             if (p.role === "worker") p.occupyUntil = state.time < 0.5 ? 0.5 : 0.74;
-            else if (p.role === "customer") p.occupyUntil = Math.min(0.98, state.time + 0.06);
+            else if (p.role === "customer") {
+              const hall = state.rooms.find((r) => r.id === p.roomId);
+              p.occupyUntil =
+                hall?.kind === "ballroom" && hall.eventEnd
+                  ? Math.max(state.time + 0.04, (hall.eventEnd % 1) || 0.9)
+                  : Math.min(0.98, state.time + 0.06);
+            }
             else if (p.role === "guest") p.occupyUntil = 0.28;
             else p.occupyUntil = 0.34;
             if (p.role === "customer") {
@@ -1146,8 +1210,14 @@ function tryLeases(state: SimState, events: SimEvent[]) {
   }
 
   if (((t >= 0.48 && t < 0.58) || (t >= 0.72 && t < 0.85)) && state.people.length < MAX_PEOPLE && rng(state) < 0.12) {
-    const kinds: RoomKind[] = ["fastfood", "shop", "restaurant", "theater", "medical"];
-    const open = state.rooms.filter((r) => kinds.includes(r.kind) && r.buildT <= 0 && inOpenHours(r.kind, t));
+    const kinds: RoomKind[] = ["fastfood", "shop", "restaurant", "theater", "medical", "ballroom"];
+    const open = state.rooms.filter(
+      (r) =>
+        kinds.includes(r.kind) &&
+        r.buildT <= 0 &&
+        inOpenHours(r.kind, t) &&
+        (r.kind !== "ballroom" || Boolean(r.eventKind)),
+    );
     if (open.length) {
       const room = open[Math.floor(rng(state) * open.length)]!;
       const p: Person = {
@@ -1176,6 +1246,105 @@ function tryLeases(state: SimState, events: SimEvent[]) {
       routePerson(state, p);
       state.people.push(p);
     }
+  }
+}
+
+export const BALL_EVENTS: Record<BallEvent, { label: string; base: number; guestPay: number }> = {
+  gala: { label: "Gala", base: 2_200, guestPay: 95 },
+  wedding: { label: "Wedding", base: 3_600, guestPay: 120 },
+  recital: { label: "Recital", base: 1_500, guestPay: 70 },
+};
+
+const BALL_KIND_LIST: BallEvent[] = ["gala", "wedding", "recital"];
+
+function nowAbs(state: SimState): number {
+  return state.day + state.time;
+}
+
+function spawnBallGuest(state: SimState, room: Room) {
+  const p: Person = {
+    id: nid(state, "p"),
+    name: personName(state.idSeq * 5 + 3),
+    role: "customer",
+    roomId: room.id,
+    floor: LOBBY_FLOOR,
+    x: streetX(state),
+    prevFloor: LOBBY_FLOOR,
+    prevX: streetX(state),
+    destFloor: room.floor,
+    destX: roomCenter(room),
+    goalX: roomCenter(room),
+    state: "enter",
+    wait: 0,
+    occupyUntil: Math.min(0.96, (room.eventEnd ?? nowAbs(state) + 0.12) % 1 || 0.9),
+    dir: 1,
+    shirt: rng(state),
+    skin: rng(state),
+    hair: rng(state),
+    phase: rng(state) * 6.2,
+    anger: 0,
+    carId: null,
+  };
+  routePerson(state, p);
+  state.people.push(p);
+}
+
+function stepBallroomEvents(state: SimState, events: SimEvent[]) {
+  const now = nowAbs(state);
+  for (const room of state.rooms) {
+    if (room.kind !== "ballroom" || room.buildT > 0) continue;
+
+    if (room.eventKind && now >= (room.eventEnd ?? 0)) {
+      const guests = state.people.filter(
+        (p) => p.roomId === room.id && (p.state === "occupy" || p.state === "ride" || p.state === "wait"),
+      ).length;
+      const def = BALL_EVENTS[room.eventKind];
+      const starMul = 1 + (state.stars - 1) * 0.14;
+      const catering = hasKind(state, "restaurant") ? 1.18 : 1;
+      const payout = Math.round((def.base + guests * def.guestPay) * starMul * catering);
+      state.money += payout;
+      events.push({
+        kind: "income",
+        text: `${def.label} · +$${payout.toLocaleString("en-US")}`,
+        amount: payout,
+        floor: room.floor,
+        x: room.x + room.cols / 2,
+      });
+      room.eventKind = null;
+      room.eventEnd = 0;
+      room.leased = 0;
+      continue;
+    }
+
+    if (room.eventKind) {
+      const heading = state.people.filter((p) => p.roomId === room.id).length;
+      room.leased = Math.min(room.capacity, heading);
+      if (heading < Math.min(room.capacity, 10 + state.stars * 2) && state.people.length < MAX_PEOPLE && rng(state) < 0.18) {
+        spawnBallGuest(state, room);
+      }
+      continue;
+    }
+
+    const evening = state.time >= 0.66 && state.time < 0.78;
+    if (!evening) continue;
+    if ((room.lastEventDay ?? -1) === state.day) continue;
+    if (rng(state) > 0.045) continue;
+
+    const kind = BALL_KIND_LIST[Math.floor(rng(state) * BALL_KIND_LIST.length)]!;
+    room.eventKind = kind;
+    room.eventEnd = now + 0.15;
+    room.lastEventDay = state.day;
+    const wave = 6 + state.stars;
+    for (let i = 0; i < wave && state.people.length < MAX_PEOPLE; i++) {
+      spawnBallGuest(state, room);
+    }
+    room.leased = Math.min(room.capacity, wave);
+    events.push({
+      kind: "info",
+      text: `${BALL_EVENTS[kind].label} in the ballroom tonight`,
+      floor: room.floor,
+      x: room.x,
+    });
   }
 }
 
@@ -1248,7 +1417,7 @@ export function currentHint(state: SimState): string | null {
     return "Fill the boutique and restaurant, then grow the crowd for three stars.";
   }
   if (state.stars === 3) return "Condos and a clinic climb toward four stars. Express elevators skip every fifth floor.";
-  if (state.stars === 4) return "A theater and clinic seal a five-star rating.";
+  if (state.stars === 4) return "A theater or a ballroom, plus a clinic, seal five stars. Galas pay when the night ends.";
   if (avgWaitTime(state) > 8) return "Elevators are backing up. Click a shaft to add another car — they pass through each other.";
   return null;
 }
@@ -1291,9 +1460,10 @@ export function stepSim(state: SimState, dt: number): SimEvent[] {
     collectRent(state, events);
   }
 
-  stepCars(state, dt);
+  stepCars(state, dt, events);
   stepPeople(state, dt, events);
   tryLeases(state, events);
+  stepBallroomEvents(state, events);
 
   const stars = evalStars(state);
   if (stars > prevStars) {
@@ -1374,9 +1544,11 @@ export function seedDemo(): SimState {
     prevFloor: 1,
     dest: 3,
     dir: 1,
+    vel: 1.6,
     state: "move",
     door: 0,
     doorTarget: 0,
+    dwell: 0,
     passengers: [],
     stops: [0, 2, 5],
   });
@@ -1387,9 +1559,11 @@ export function seedDemo(): SimState {
     prevFloor: 6,
     dest: 2,
     dir: -1,
+    vel: 1.4,
     state: "move",
     door: 0,
     doorTarget: 0,
+    dwell: 0,
     passengers: [],
     stops: [0, 4],
   });
@@ -1451,6 +1625,10 @@ export function deserialize(raw: string): SimState | null {
     }
     for (const sh of s.shafts) {
       if (sh.kind !== "express") sh.kind = "standard";
+    }
+    for (const c of s.cars) {
+      if (typeof c.vel !== "number" || Number.isNaN(c.vel)) c.vel = 0;
+      if (typeof c.dwell !== "number" || Number.isNaN(c.dwell)) c.dwell = 0;
     }
     return s;
   } catch {

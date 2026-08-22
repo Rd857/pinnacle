@@ -228,6 +228,7 @@ function wallColor(kind: Room["kind"], night: number): string {
     medical: ["#e4ecec", "#c2d0d0"],
     suite: ["#e8dcc8", "#cbb89a"],
     theater: ["#3a2a32", "#241820"],
+    ballroom: ["#3a2430", "#24141c"],
     stairs: ["#d0ccc6", "#b4b0aa"],
   };
   const [a, b] = map[kind] ?? ["#ddd", "#bbb"];
@@ -248,6 +249,7 @@ function floorColor(kind: Room["kind"]): string {
     medical: "#dfe6e6",
     suite: "#6a3a3a",
     theater: "#2a1a22",
+    ballroom: "#4a3040",
     stairs: "#b8b4ae",
   };
   return map[kind] ?? "#bbb";
@@ -378,6 +380,75 @@ function furnitureTheater(ctx: CanvasRenderingContext2D, x: number, y: number, w
   }
 }
 
+function furnitureBallroom(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  live: boolean,
+  t: number,
+) {
+  ctx.fillStyle = "#2c1822";
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 10);
+  ctx.fillStyle = "#5a3a28";
+  ctx.fillRect(x + 8, y + h - 18, w - 16, 10);
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = i % 2 ? "#6a4630" : "#4a3020";
+    ctx.fillRect(x + 10 + i * ((w - 20) / 6), y + h - 18, (w - 20) / 6, 10);
+  }
+  ctx.strokeStyle = rgb(196, 163, 96, live ? 0.55 : 0.28);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h - 28, w * 0.28, 10, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#1a1016";
+  rr(ctx, x + w - 70, y + h - 52, 52, 22, 3);
+  ctx.fill();
+  ctx.fillStyle = rgb(196, 163, 96, 0.7);
+  ctx.fillRect(x + w - 68, y + h - 52, 48, 3);
+  ctx.fillStyle = rgb(20, 16, 22, 0.55);
+  ctx.fillRect(x + 8, y + h / 2 - 4, w - 16, 3);
+  ctx.strokeStyle = rgb(196, 163, 96, 0.4);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + 12, y + h / 2 - 4);
+  ctx.lineTo(x + w - 12, y + h / 2 - 4);
+  ctx.stroke();
+  const cx = x + w / 2;
+  const cy = y + 22;
+  ctx.strokeStyle = rgb(212, 180, 110, live ? 0.95 : 0.55);
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + t * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * 16, cy + Math.sin(a) * 8 + 6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = live ? rgb(255, 220, 150, 0.85) : rgb(212, 180, 110, 0.5);
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+  ctx.fill();
+  if (live) {
+    ctx.fillStyle = rgb(255, 220, 160, 0.12);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 18, 48, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = rgb(232, 200, 120, 0.7);
+    ctx.font = "8px Figtree, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("TONIGHT", cx, y + 14);
+    ctx.textAlign = "left";
+  }
+  const nWin = Math.max(3, Math.floor(w / 48));
+  for (let i = 0; i < nWin; i++) {
+    const wx = x + 14 + i * 44;
+    ctx.fillStyle = live ? rgb(255, 210, 140, 0.55) : rgb(80, 90, 120, 0.25);
+    ctx.fillRect(wx, y + 10, 12, h / 2 - 20);
+  }
+}
+
 function furnitureMedical(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
   ctx.fillStyle = "#e8eef0";
   rr(ctx, x + 12, y + h - 22, 30, 10, 2);
@@ -425,7 +496,7 @@ function furnitureStairs(ctx: CanvasRenderingContext2D, x: number, y: number, w:
 function drawRoom(ctx: CanvasRenderingContext2D, r: Room, t: number, selected: boolean) {
   const { x, y, w, h } = roomRect(r);
   const night = nightAmt(t);
-  const lit = r.leased > 0 || r.kind === "lobby" || r.kind === "stairs";
+  const lit = r.leased > 0 || r.kind === "lobby" || r.kind === "stairs" || Boolean(r.eventKind);
   ctx.fillStyle = wallColor(r.kind, night);
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = floorColor(r.kind);
@@ -468,6 +539,9 @@ function drawRoom(ctx: CanvasRenderingContext2D, r: Room, t: number, selected: b
       break;
     case "theater":
       furnitureTheater(ctx, x, y, w, h);
+      break;
+    case "ballroom":
+      furnitureBallroom(ctx, x, y, w, h, Boolean(r.eventKind), t);
       break;
     case "medical":
       furnitureMedical(ctx, x, y, w, h);
@@ -581,7 +655,7 @@ function drawCar(ctx: CanvasRenderingContext2D, car: ElevatorCar, state: SimStat
   ctx.fill();
   ctx.fillStyle = express ? "#e4d2b8" : "#c5ccd6";
   ctx.fillRect(x + 2, y + 2, w - 4, 5);
-  const open = car.door;
+  const open = car.door * car.door * (3 - 2 * car.door);
   const dw = (w / 2 - 2) * (1 - open);
   ctx.fillStyle = express ? "#5c4030" : "#4a5060";
   ctx.fillRect(x + 3, y + 10, dw, h - 16);

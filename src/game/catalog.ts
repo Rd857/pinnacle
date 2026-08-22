@@ -226,6 +226,21 @@ export const CATALOG: Record<RoomKind, RoomDef> = {
     group: "retail",
     icon: "film",
   },
+  ballroom: {
+    id: "ballroom",
+    name: "Ballroom",
+    blurb: "Two-story hall. Galas, weddings, and recitals pay a lump sum when the night is over.",
+    cols: 14,
+    rows: 2,
+    cost: 22_000,
+    stars: 4,
+    capacity: 24,
+    rent: 0,
+    visitPay: 0,
+    zone: "above",
+    group: "retail",
+    icon: "ballroom",
+  },
 };
 
 export const TOOL_ORDER: RoomKind[] = [
@@ -244,6 +259,7 @@ export const TOOL_ORDER: RoomKind[] = [
   "medical",
   "suite",
   "theater",
+  "ballroom",
 ];
 
 export const GROUP_LABEL: Record<RoomDef["group"], string> = {

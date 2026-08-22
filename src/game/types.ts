@@ -13,7 +13,8 @@ export type RoomKind =
   | "restaurant"
   | "medical"
   | "theater"
-  | "suite";
+  | "suite"
+  | "ballroom";
 
 export type ExpandSide = "left" | "right";
 
@@ -28,6 +29,8 @@ export type PersonRole = "worker" | "guest" | "resident" | "customer";
 export type PersonState = "enter" | "walk" | "wait" | "ride" | "occupy" | "exit";
 
 export type CarState = "idle" | "move" | "door";
+
+export type BallEvent = "gala" | "wedding" | "recital";
 
 export interface RoomDef {
   id: RoomKind;
@@ -56,6 +59,9 @@ export interface Room {
   capacity: number;
   dirt: number;
   buildT: number;
+  eventKind?: BallEvent | null;
+  eventEnd?: number;
+  lastEventDay?: number;
 }
 
 export type ElevatorKind = "standard" | "express";
@@ -75,9 +81,11 @@ export interface ElevatorCar {
   prevFloor: number;
   dest: number;
   dir: -1 | 0 | 1;
+  vel: number;
   state: CarState;
   door: number;
   doorTarget: number;
+  dwell: number;
   passengers: string[];
   stops: number[];
 }
@@ -129,7 +137,7 @@ export interface Particle {
 }
 
 export interface SimEvent {
-  kind: "lease" | "vacate" | "income" | "star" | "complaint" | "info" | "place" | "error";
+  kind: "lease" | "vacate" | "income" | "star" | "complaint" | "info" | "place" | "error" | "ding";
   text: string;
   amount?: number;
   floor?: number;

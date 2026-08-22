@@ -42,8 +42,9 @@ export const sfx = {
   },
   error: () => beep(140, 0.16, "square", 0.06, -40),
   ding: () => {
-    beep(880, 0.09, "sine", 0.08);
-    beep(1320, 0.12, "sine", 0.05);
+    const f = 820 + Math.random() * 80;
+    beep(f, 0.1, "sine", 0.07);
+    beep(f * 1.5, 0.14, "sine", 0.045);
   },
   cash: () => {
     beep(880, 0.07, "square", 0.05);

@@ -16,6 +16,7 @@ import { hasSave, loadSave, writeSave, newGame } from "./save";
 import {
   addCar as addCarToShaft,
   avgWaitTime,
+  BALL_EVENTS,
   canWiden,
   carsOnShaft,
   clockLabel,
@@ -353,6 +354,7 @@ export class TowerEngine {
         if (Math.abs(e.amount) >= 20) sfx.cash();
         this.floatAt(e.x ?? (this.state.left + this.state.right) / 2, e.floor ?? 0, e.text, e.amount >= 0 ? "#7d9e86" : "#c45c4a");
       }
+      if (e.kind === "ding") sfx.ding();
       if (e.kind === "star" && e.stars) {
         sfx.star();
         useGameUi.setState({ starUnlock: e.stars });
@@ -602,13 +604,23 @@ export class TowerEngine {
     if (room) {
       this.selectedId = room.id;
       const def = CATALOG[room.kind];
+      let occ = def.capacity ? `${room.leased} / ${room.capacity} occupied` : "Transit";
+      let blurb = def.blurb;
+      if (room.kind === "ballroom") {
+        if (room.eventKind) {
+          occ = `${BALL_EVENTS[room.eventKind].label} tonight · ${room.leased} guests`;
+          blurb = "Guests are arriving. The house is paid when the event ends.";
+        } else {
+          occ = "Quiet. Evening events start after dusk.";
+        }
+      }
       useGameUi.setState({
         selectedId: room.id,
         inspect: {
           name: def.name,
           floor: `Floor ${floorLabel(room.floor)}`,
-          occ: def.capacity ? `${room.leased} / ${room.capacity} occupied` : "Transit",
-          blurb: def.blurb,
+          occ,
+          blurb,
           kind: room.kind,
         },
       });

@@ -11,6 +11,7 @@ import {
   Film,
   HeartPulse,
   Home,
+  Music,
   Pause,
   Play,
   FastForward,
@@ -51,6 +52,7 @@ const ICONS: Record<RoomKind | "bulldoze", typeof Columns3> = {
   restaurant: UtensilsCrossed,
   medical: HeartPulse,
   theater: Film,
+  ballroom: Music,
   suite: Sparkles,
   bulldoze: Trash2,
 };
@@ -490,6 +492,7 @@ function Help() {
         <li>Click a tool once, then stamp it as many times as you want. Right-click or Esc puts it down.</li>
         <li>Hotel singles are a third of an office, doubles two-thirds, suites the same width as an office.</li>
         <li>Click a shaft to add extra cars — up to 8. They share the well and pass through each other, same as the original.</li>
+        <li>A two-story ballroom (four stars) hosts galas, weddings, and recitals. Guests arrive in the evening; the house is paid when the night ends. A restaurant on site sweetens the take.</li>
         <li>People wait on elevators. Long queues cost tenants — add another car, or a second shaft.</li>
         <li>Drag to pan, scroll or pinch to zoom, WASD or arrows to move the view.</li>
         <li>Space pauses. 1 / 2 / 3 set speed. E selects Widen. Esc deselects or pauses.</li>
@@ -513,7 +516,7 @@ function StarModal({ n }: { n: number }) {
       <p className="mt-2 text-sm text-muted">
         {n === 2 && "Hotels, boutiques, restaurants, parking, and express elevators are open."}
         {n === 3 && "Condos and a clinic have unlocked."}
-        {n === 4 && "Suites and a two-story theater can go in."}
+        {n === 4 && "Suites, a two-story theater, and a ballroom can go in. Events pay the house when the night ends."}
         {n === 5 && "The city skyline belongs to you."}
       </p>
       <Button className="mt-6 w-full" onClick={() => useGameUi.setState({ starUnlock: null })}>

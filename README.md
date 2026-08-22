@@ -13,6 +13,7 @@ Start with a lobby on the ground floor, raise a shaft, and fill the tower.
 - **Offices** pay rent when workers can reach them. A cafe keeps them from walking out at lunch.
 - **Hotels** come in singles (⅓ of an office), doubles (⅔), and suites (full office width).
 - **Three stars** need a boutique and a restaurant — both unlock at two stars.
+- **Ballroom** (four stars) hosts galas, weddings, and recitals. Guests arrive in the evening; you get paid when the night is over. A restaurant on site sweetens the take.
 - **Express elevators** (two stars) are faster, hold 16, and only stop every 5 floors.
 - **Extra cars** share a shaft and pass through each other. Click a shaft and hit *Add car* (up to 8).
 - Widen the lot from either end when floors get tight.
